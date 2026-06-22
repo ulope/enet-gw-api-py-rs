@@ -9,4 +9,9 @@ name = "enet_gw_api_py_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.29.0"
+pyo3 = { version = "0.29.0", features = ["extension-module", "abi3-py38"] }
+pyo3-async-runtimes = { version = "0.29.0", features = ["tokio-runtime"] }
+enet-client = "0.2.1"
+enet-proto = "0.1.7"
+eventuals = "0.6"
+tokio = { version = "1", features = ["sync"] }
