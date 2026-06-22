@@ -1,0 +1,27 @@
+# Vendored fork of `enet-client` v0.2.1 (https://github.com/YoloDev/enet-rs).
+#
+# Patched locally to add support for blinds (Jalousie) devices, which the
+# upstream 0.2.1 release leaves as `todo!()` panics. See src/dev.rs and
+# src/evt.rs for the blinds-specific additions.
+
+[package]
+edition = "2021"
+name = "enet-client"
+version = "0.2.1"
+authors = ["Aleksander Heintz <alxandr@alxandr.me>"]
+description = "eNet gateway client (vendored fork with blinds support)"
+license = "MIT"
+repository = "https://github.com/YoloDev/enet-rs"
+resolver = "2"
+
+[dependencies]
+backoff = { version = "0.3", features = ["futures", "tokio"] }
+bytes = "1"
+enet-proto = "0.1.7"
+eventuals = "0.6"
+futures = "0.3"
+paste = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.6", features = ["codec"] }
+tracing = "0.1"

@@ -10,10 +10,13 @@ from .enet_gw_api_py_rs import (
     DeviceValue,
     EnetClient,
 )
+from .discovery import GatewayInfo, discover_gateways
 
 __all__ = [
     "EnetClient",
     "Device",
     "DeviceValue",
     "DeviceStream",
+    "discover_gateways",
+    "GatewayInfo",
 ]

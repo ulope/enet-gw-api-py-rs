@@ -286,6 +286,23 @@ impl PyEnetClient {
         self.set_value(py, number, SetValue::Dimm(brightness))
     }
 
+    /// Move a blinds (Jalousie) device to a position percentage (`0..=100`).
+    ///
+    /// The value is the raw gateway position: `0` and `100` are the two end
+    /// stops. Read `DeviceValue.brightness` on a blinds device's subscription to
+    /// get the current position back.
+    fn set_blinds_position<'py>(
+        &self,
+        py: Python<'py>,
+        number: u32,
+        position: u8,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if position > 100 {
+            return Err(PyValueError::new_err("position must be in the range 0..=100"));
+        }
+        self.set_value(py, number, SetValue::Blinds(position))
+    }
+
     fn __repr__(&self) -> String {
         format!("EnetClient(devices={})", self.devices.len())
     }

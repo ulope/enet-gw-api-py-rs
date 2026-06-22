@@ -30,9 +30,10 @@ class MockGateway:
     ITEMS = [
         {"TYPE": "BINAER", "NUMBER": 1, "NAME": "Light", "PROGRAMMABLE": True},
         {"TYPE": "DIMMER", "NUMBER": 2, "NAME": "Dimmer"},
+        {"TYPE": "JALOUSIE", "NUMBER": 3, "NAME": "Blind"},
     ]
-    # Both items are real devices (value == 1).
-    CHANNEL_DEVICES = [1, 1]
+    # All items are real devices (value == 1).
+    CHANNEL_DEVICES = [1, 1, 1]
 
     def __init__(self):
         self.server = None
@@ -91,7 +92,7 @@ class MockGateway:
                 "ITEMS": self.ITEMS,
                 "LISTS": [{
                     "NUMBER": 0, "NAME": "Room",
-                    "ITEMS_ORDER": [1, 2], "VISIBLE": True,
+                    "ITEMS_ORDER": [1, 2, 3], "VISIBLE": True,
                 }],
             }))
         elif cmd == "ITEM_VALUE_SIGN_IN_REQ":
@@ -128,6 +129,8 @@ def test_module_exposes_public_api():
     assert hasattr(enet_gw_api_py_rs, "Device")
     assert hasattr(enet_gw_api_py_rs, "DeviceValue")
     assert hasattr(enet_gw_api_py_rs, "DeviceStream")
+    assert hasattr(enet_gw_api_py_rs, "discover_gateways")
+    assert hasattr(enet_gw_api_py_rs, "GatewayInfo")
 
 
 def test_set_brightness_rejects_out_of_range():
@@ -151,13 +154,16 @@ def test_connect_and_list_devices():
         try:
             client = await EnetClient.connect(gw.host, gw.port)
             devices = client.devices
-            assert {d.number for d in devices} == {1, 2}
+            assert {d.number for d in devices} == {1, 2, 3}
             light = client.device(1)
             assert isinstance(light, Device)
             assert light.name == "Light"
             assert light.kind == "binary"
             dimmer = client.device(2)
             assert dimmer.kind == "dimmer"
+            blind = client.device(3)
+            assert blind.name == "Blind"
+            assert blind.kind == "blinds"
             assert client.device(999) is None
         finally:
             await gw.stop()
@@ -210,3 +216,119 @@ def test_turn_on_sends_command():
             await gw.stop()
 
     asyncio.run(scenario())
+
+
+def test_blinds_position_command_and_updates():
+    async def scenario():
+        gw = MockGateway()
+        await gw.start()
+        try:
+            client = await EnetClient.connect(gw.host, gw.port)
+
+            # Subscribe and read back a position update for the blind
+            # (device 3 == channel index 2).
+            stream = client.device(3).subscribe()
+            it = stream.__aiter__()
+            await gw.push_update(2, "ON", value="70")
+            value = await asyncio.wait_for(it.__anext__(), timeout=5)
+            assert value.is_on is True
+            assert value.brightness == 70  # blinds position is exposed here
+
+            # Move the blind and check the command sent to the gateway.
+            await client.set_blinds_position(3, 40)
+            for _ in range(50):
+                if gw.set_commands:
+                    break
+                await asyncio.sleep(0.05)
+            assert gw.set_commands, "gateway never received a blinds command"
+            sent = gw.set_commands[-1]["VALUES"][0]
+            assert sent["NUMBER"] == 3
+            assert sent["STATE"] == "VALUE_BLINDS"
+            assert sent["VALUE"] == 40
+
+            with pytest.raises(ValueError):
+                await client.set_blinds_position(3, 200)
+        finally:
+            await gw.stop()
+
+    asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Discovery
+# --------------------------------------------------------------------------- #
+
+def _build_discovery_reply(ip, name, mac, state=1, manufacturer=2):
+    from enet_gw_api_py_rs.discovery import DISCOVERY_MAGIC
+
+    body = bytearray()
+    body.append(0)  # length byte (placeholder, not validated beyond min length)
+    body += DISCOVERY_MAGIC.to_bytes(2, "little")
+    body += bytes(int(o) for o in ip.split("."))
+    body += name.encode("latin-1")
+    body.append(0)  # separator between name and MAC
+    body += bytes(int(b, 16) for b in mac.split(":"))
+    body.append(state)
+    body.append(manufacturer)
+    body[0] = len(body)
+    return bytes(body)
+
+
+class _MockGatewayResponder(asyncio.DatagramProtocol):
+    """Replies to a discovery broadcast with a canned gateway packet."""
+
+    def __init__(self, reply):
+        self._reply = reply
+        self.transport = None
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, addr):
+        if data.startswith(b"Ich wusste"):
+            self.transport.sendto(self._reply, addr)
+
+
+def test_parse_discovery_reply():
+    from enet_gw_api_py_rs.discovery import _parse_reply
+
+    reply = _build_discovery_reply("192.168.1.50", "eNet-Gateway", "de:ad:be:ef:00:01")
+    info = _parse_reply(reply)
+    assert info is not None
+    assert info.host == "192.168.1.50"
+    assert info.name == "eNet-Gateway"
+    assert info.mac == "de:ad:be:ef:00:01"
+    assert info.manufacturer == 2
+    # A too-short or wrong-magic packet is rejected.
+    assert _parse_reply(b"\x00" * 4) is None
+    assert _parse_reply(bytes([0, 0, 0]) + b"\x00" * 20) is None
+
+
+def test_discover_gateways_against_mock():
+    from enet_gw_api_py_rs import discover_gateways, GatewayInfo
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        reply = _build_discovery_reply("10.0.0.5", "test-gw", "aa:bb:cc:dd:ee:ff")
+        # Stand up a fake gateway listening on an ephemeral broadcast port.
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda: _MockGatewayResponder(reply),
+            local_addr=("127.0.0.1", 0),
+        )
+        gw_port = transport.get_extra_info("sockname")[1]
+        try:
+            gateways = await discover_gateways(
+                timeout=1.0,
+                broadcast_address="127.0.0.1",
+                broadcast_port=gw_port,
+                listen_port=0,
+                attempts=2,
+            )
+        finally:
+            transport.close()
+
+        assert any(isinstance(g, GatewayInfo) and g.host == "10.0.0.5"
+                   and g.mac == "aa:bb:cc:dd:ee:ff" for g in gateways)
+
+    asyncio.run(scenario())
+

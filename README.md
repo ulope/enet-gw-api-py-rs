@@ -24,6 +24,25 @@ maturin develop --uv
 
 ## Usage
 
+### Discovery
+
+Find gateways on the local network (pure Python, UDP broadcast):
+
+```python
+import asyncio
+from enet_gw_api_py_rs import discover_gateways
+
+
+async def main():
+    for gw in await discover_gateways(timeout=5):
+        print(gw.host, gw.name, gw.mac)
+
+
+asyncio.run(main())
+```
+
+### Client
+
 ```python
 import asyncio
 from enet_gw_api_py_rs import EnetClient
@@ -41,7 +60,8 @@ async def main():
     # Send commands (by device number).
     await client.turn_on(1)
     await client.turn_off(1)
-    await client.set_brightness(2, 50)   # dimmers, 0..=100
+    await client.set_brightness(2, 50)         # dimmers, 0..=100
+    await client.set_blinds_position(3, 100)   # blinds, 0..=100
 
     # Subscribe to live state updates for a device.
     async def watch(device):
@@ -59,16 +79,22 @@ asyncio.run(main())
 
 | Object | Member | Description |
 | ------ | ------ | ----------- |
+| module | `await discover_gateways(timeout=5, ...)` | Find gateways via UDP broadcast. |
+| `GatewayInfo` | `host`, `name`, `mac`, ... | A discovered gateway. |
 | `EnetClient` | `await connect(host, port=5000)` | Connect and fetch the project. |
 | | `devices -> list[Device]` | All controllable devices. |
 | | `device(number) -> Device | None` | Look up a device by number. |
 | | `await turn_on(number, long=False)` | Turn a device on. |
 | | `await turn_off(number, long=False)` | Turn a device off. |
 | | `await set_brightness(number, pct)` | Set a dimmer to `0..=100`. |
+| | `await set_blinds_position(number, pct)` | Move a blind to `0..=100`. |
 | `Device` | `number`, `name`, `kind` | Device metadata. |
 | | `subscribe() -> DeviceStream` | Async iterator of updates. |
 | `DeviceValue` | `is_on`, `brightness`, `state`, `is_undefined` | A point-in-time value. |
 | `DeviceStream` | `async for value in ...` | Live state updates. |
+
+For blinds (`kind == "blinds"`), `DeviceValue.brightness` carries the current
+position (`0..=100`).
 
 ### Home Assistant notes
 
@@ -87,16 +113,23 @@ async def _listen(self):
 Start `_listen` as a background task in `async_added_to_hass` and cancel it in
 `async_will_remove_from_hass`.
 
-## Limitations
+## Blinds support
 
-These come from the underlying `enet-client` 0.2.1 crate:
+Upstream `enet-client` 0.2.1 leaves blinds (Jalousie) devices as `todo!()`
+panics. This project ships a small **vendored fork** of the crate under
+[`rust/vendor/enet-client`](rust/vendor/enet-client) that adds them: blinds are
+modelled like dimmers on the wire (a state plus a `0..=100` position), exposed
+through `kind == "blinds"`, `set_blinds_position()` and the position-in-
+`brightness` convention described above. Movement direction/stop is not part of
+the gateway protocol used here — only absolute position is supported.
 
-- **Blinds (Jalousie) devices are not fully supported.** The crate panics when
-  building/commanding a blinds device, so connecting to a project that contains
-  one will raise. Only binary (switch) and dimmer devices are usable today.
+## Notes
+
 - Device commands use the device **number**, while the gateway internally keys
   live updates by channel index; this wrapper hides that distinction — you only
   ever deal with device numbers.
+- `discover_gateways` binds UDP port 2906 by default (matching the gateways'
+  reply behaviour). If that port is unavailable, pass `listen_port=0`.
 
 ## Development
 

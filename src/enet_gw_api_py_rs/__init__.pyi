@@ -2,7 +2,16 @@
 
 from typing import AsyncIterator, List, Optional
 
-__all__ = ["EnetClient", "Device", "DeviceValue", "DeviceStream"]
+from .discovery import GatewayInfo as GatewayInfo, discover_gateways as discover_gateways
+
+__all__ = [
+    "EnetClient",
+    "Device",
+    "DeviceValue",
+    "DeviceStream",
+    "discover_gateways",
+    "GatewayInfo",
+]
 
 class DeviceValue:
     """A device's state/value at a point in time."""
@@ -74,5 +83,8 @@ class EnetClient:
 
     async def set_brightness(self, number: int, brightness: int) -> None:
         """Set a dimmer's brightness to a percentage (0..=100)."""
+
+    async def set_blinds_position(self, number: int, position: int) -> None:
+        """Move a blinds device to a position percentage (0..=100)."""
 
     def __repr__(self) -> str: ...
