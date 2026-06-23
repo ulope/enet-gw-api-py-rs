@@ -27,7 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 _LOCAL_ADDR_MISSING = object()
 
 # The magic "knock" every eNet gateway listens for.
-DISCOVERY_PAYLOAD = b"Ich wusste, dass Sie zurueck kommen wuerden...\x00\x02"
+DISCOVERY_PAYLOAD = b"Ich wusste, dass Sie zurueck kommen wuerden...\x00\x01"
 # Port the gateways listen on for the broadcast.
 DISCOVERY_BROADCAST_PORT = 3112
 # Port the gateways send their replies to.
