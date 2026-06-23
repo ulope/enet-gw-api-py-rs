@@ -113,15 +113,20 @@ async def _listen(self):
 Start `_listen` as a background task in `async_added_to_hass` and cancel it in
 `async_will_remove_from_hass`.
 
-## Blinds support
+## Vendored forks
 
-Upstream `enet-client` 0.2.1 leaves blinds (Jalousie) devices as `todo!()`
-panics. This project ships a small **vendored fork** of the crate under
-[`rust/vendor/enet-client`](rust/vendor/enet-client) that adds them: blinds are
-modelled like dimmers on the wire (a state plus a `0..=100` position), exposed
-through `kind == "blinds"`, `set_blinds_position()` and the position-in-
-`brightness` convention described above. Movement direction/stop is not part of
-the gateway protocol used here — only absolute position is supported.
+This project ships small **vendored forks** of the upstream crates under
+[`rust/vendor`](rust/vendor), patched for real-world gateways:
+
+- **`enet-client`** — upstream 0.2.1 leaves blinds (Jalousie) devices as
+  `todo!()` panics. The fork adds them: blinds are modelled like dimmers on the
+  wire (a state plus a `0..=100` position), exposed through `kind == "blinds"`,
+  `set_blinds_position()` and the position-in-`brightness` convention described
+  above. Movement direction/stop is not part of the gateway protocol used here —
+  only absolute position is supported.
+- **`enet-proto`** — gateways report device types in PascalCase (e.g.
+  `"Binaer"`), but the upstream release only accepts the UPPERCASE spelling
+  (`"BINAER"`). The fork accepts both.
 
 ## Notes
 

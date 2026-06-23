@@ -205,8 +205,6 @@ dependencies = [
 [[package]]
 name = "enet-proto"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "660e4d7591db4252aca3f472520320eb94be8dbe67ebf8479454540a0f13cccc"
 dependencies = [
  "bytes",
  "color-eyre",

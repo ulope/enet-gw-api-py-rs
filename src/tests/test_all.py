@@ -27,10 +27,12 @@ class MockGateway:
 
     # index -> project item. Index position matters: it lines up with the
     # GET_CHANNEL_INFO_ALL "DEVICES" array.
+    # Real gateways send the device type in PascalCase (e.g. "Binaer"), not the
+    # UPPERCASE form; the vendored enet-proto fork accepts both.
     ITEMS = [
-        {"TYPE": "BINAER", "NUMBER": 1, "NAME": "Light", "PROGRAMMABLE": True},
-        {"TYPE": "DIMMER", "NUMBER": 2, "NAME": "Dimmer"},
-        {"TYPE": "JALOUSIE", "NUMBER": 3, "NAME": "Blind"},
+        {"TYPE": "Binaer", "NUMBER": 1, "NAME": "Light", "PROGRAMMABLE": True},
+        {"TYPE": "Dimmer", "NUMBER": 2, "NAME": "Dimmer"},
+        {"TYPE": "Jalousie", "NUMBER": 3, "NAME": "Blind"},
     ]
     # All items are real devices (value == 1).
     CHANNEL_DEVICES = [1, 1, 1]
