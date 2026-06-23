@@ -6,6 +6,7 @@
 //! returns a Python awaitable that is driven by a background Tokio runtime.
 
 use std::sync::Arc;
+use std::sync::Once;
 
 use enet_client::dev::{DeviceKind, DeviceValue};
 use enet_client::{ClickDuration, Device, EnetClient as RsEnetClient, EnetDevice, SetValue};
@@ -14,6 +15,23 @@ use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration, PyValueError};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 use tokio::sync::Mutex;
+
+/// Format an error together with its full `source()` chain.
+///
+/// The `enet-client` error types use the same generic `Display` message for
+/// every variant (e.g. "Failed to connect to gateway."), so the only way to see
+/// *which* step actually failed is to walk the source chain.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut msg = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        msg.push_str(": ");
+        msg.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    msg
+}
+
 
 /// Map the (non-exhaustive) [`DeviceKind`] enum to a stable lowercase string so
 /// that Python callers never have to deal with Rust enum variants.
@@ -189,7 +207,7 @@ impl PyEnetClient {
             client
                 .set_value(number, value)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("failed to set value: {e}")))
+                .map_err(|e| PyRuntimeError::new_err(format!("failed to set value: {}", error_chain(&e))))
         })
     }
 }
@@ -207,7 +225,7 @@ impl PyEnetClient {
         future_into_py(py, async move {
             let client = RsEnetClient::new((host, port))
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("failed to connect: {e}")))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("failed to connect: {}", error_chain(&e))))?;
             let devices = client.devices().to_vec();
             Ok(PyEnetClient {
                 inner: Arc::new(Mutex::new(client)),
@@ -308,6 +326,32 @@ impl PyEnetClient {
     }
 }
 
+static INIT_LOGGING: Once = Once::new();
+
+/// Enable the underlying Rust client's tracing logs to stderr.
+///
+/// Useful for debugging connection problems: it shows the actual protocol
+/// exchange with the gateway. `level` is a `tracing`/`env_logger`-style filter
+/// (e.g. `"debug"`, `"info"`, or `"enet-client=debug"`). When omitted, the
+/// `RUST_LOG` environment variable is used, falling back to `"info"`.
+///
+/// Safe to call multiple times; only the first call takes effect.
+#[pyfunction]
+#[pyo3(signature = (level = None))]
+fn enable_logging(level: Option<String>) {
+    INIT_LOGGING.call_once(|| {
+        let filter = match level {
+            Some(l) => tracing_subscriber::EnvFilter::new(l),
+            None => tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        };
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .try_init();
+    });
+}
+
 /// Python bindings for the Jung/Gira Funk Gateway IP (eNet) client.
 #[pymodule]
 fn enet_gw_api_py_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -315,5 +359,6 @@ fn enet_gw_api_py_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDevice>()?;
     m.add_class::<PyDeviceValue>()?;
     m.add_class::<PyDeviceStream>()?;
+    m.add_function(wrap_pyfunction!(enable_logging, m)?)?;
     Ok(())
 }

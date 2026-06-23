@@ -16,3 +16,4 @@ enet-client = { path = "vendor/enet-client" }
 enet-proto = "0.1.7"
 eventuals = "0.6"
 tokio = { version = "1", features = ["sync"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

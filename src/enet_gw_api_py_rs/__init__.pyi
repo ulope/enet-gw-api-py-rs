@@ -11,7 +11,15 @@ __all__ = [
     "DeviceStream",
     "discover_gateways",
     "GatewayInfo",
+    "enable_logging",
 ]
+
+def enable_logging(level: Optional[str] = None) -> None:
+    """Enable the Rust client's tracing logs to stderr (for debugging).
+
+    ``level`` is a tracing/env_logger-style filter such as ``"debug"`` or
+    ``"enet-client=debug"``; defaults to ``RUST_LOG`` or ``"info"``.
+    """
 
 class DeviceValue:
     """A device's state/value at a point in time."""

@@ -131,6 +131,24 @@ the gateway protocol used here — only absolute position is supported.
 - `discover_gateways` binds UDP port 2906 by default (matching the gateways'
   reply behaviour). If that port is unavailable, pass `listen_port=0`.
 
+## Debugging connection problems
+
+`connect` raises a `RuntimeError` whose message includes the full error chain,
+so a failure that happens *after* the TCP connection (during the version /
+channel-info / project handshake) tells you which step failed, e.g.:
+
+```
+failed to connect: Failed to connect to gateway.: Failed to send 'get_version'
+command.: Failed to send command.: Connection closed.
+```
+
+For the full protocol exchange, enable the Rust client's logs before connecting:
+
+```python
+from enet_gw_api_py_rs import enable_logging
+enable_logging("debug")   # or rely on the RUST_LOG env var
+```
+
 ## Development
 
 ```bash

@@ -9,6 +9,7 @@ from .enet_gw_api_py_rs import (
     DeviceStream,
     DeviceValue,
     EnetClient,
+    enable_logging,
 )
 from .discovery import GatewayInfo, discover_gateways
 
@@ -19,4 +20,5 @@ __all__ = [
     "DeviceStream",
     "discover_gateways",
     "GatewayInfo",
+    "enable_logging",
 ]
