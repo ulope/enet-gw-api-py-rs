@@ -73,7 +73,7 @@ class EnetClient:
     """A connected client for an eNet gateway."""
 
     @staticmethod
-    async def connect(host: str, port: int = 5000) -> EnetClient:
+    async def connect(host: str, port: int = 9050) -> EnetClient:
         """Connect to the gateway at ``host``:``port`` and fetch its project."""
 
     @property

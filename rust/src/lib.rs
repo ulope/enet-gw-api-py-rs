@@ -219,7 +219,7 @@ impl PyEnetClient {
     /// the Funk Gateway IP's standard port. The returned awaitable resolves to a
     /// connected `EnetClient` once the project (device list) has been fetched.
     #[staticmethod]
-    #[pyo3(signature = (host, port = 5000))]
+    #[pyo3(signature = (host, port = 9050))]
     fn connect(py: Python<'_>, host: String, port: u16) -> PyResult<Bound<'_, PyAny>> {
         future_into_py(py, async move {
             let client = RsEnetClient::new((host, port))

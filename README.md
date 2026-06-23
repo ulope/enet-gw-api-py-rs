@@ -49,7 +49,7 @@ from enet_gw_api_py_rs import EnetClient
 
 
 async def main():
-    # `port` defaults to 5000 (the standard Funk Gateway IP port).
+    # `port` defaults to 9050 (the standard Funk Gateway IP port).
     client = await EnetClient.connect("192.168.1.50")
 
     # Enumerate the devices the gateway knows about.
