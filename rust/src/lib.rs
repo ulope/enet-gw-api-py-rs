@@ -6,7 +6,6 @@
 //! returns a Python awaitable that is driven by a background Tokio runtime.
 
 use std::sync::Arc;
-use std::sync::Once;
 
 use enet_client::dev::{DeviceKind, DeviceValue};
 use enet_client::{ClickDuration, Device, EnetClient as RsEnetClient, EnetDevice, SetValue};
@@ -326,39 +325,54 @@ impl PyEnetClient {
     }
 }
 
-static INIT_LOGGING: Once = Once::new();
+static LOG_RESET: std::sync::OnceLock<pyo3_log::ResetHandle> = std::sync::OnceLock::new();
 
-/// Enable the underlying Rust client's tracing logs to stderr.
+/// Install the bridge that forwards the underlying Rust client's `tracing` logs
+/// into Python's standard `logging` module.
 ///
-/// Useful for debugging connection problems: it shows the actual protocol
-/// exchange with the gateway. `level` is a `tracing`/`env_logger`-style filter
-/// (e.g. `"debug"`, `"info"`, or `"enet-client=debug"`). When omitted, the
-/// `RUST_LOG` environment variable is used, falling back to `"info"`.
+/// After this runs, the Rust logs appear under Python loggers named
+/// `enet_gw_api_py_rs.enet-client.*` / `enet_gw_api_py_rs.enet-proto.*`, so they
+/// honour whatever the application configures via `logging` (levels, handlers,
+/// formatters). This is called automatically when the module is imported.
+fn install_log_bridge(py: Python<'_>) {
+    if LOG_RESET.get().is_some() {
+        return;
+    }
+    let logger = match pyo3_log::Logger::new(py, pyo3_log::Caching::LoggersAndLevels) {
+        Ok(logger) => logger,
+        Err(_) => return,
+    };
+    let install = logger
+        // Pass everything through to Python and let the Python loggers decide.
+        .filter(log::LevelFilter::Trace)
+        // Namespace the Rust logs under the package's logger.
+        .set_prefix("enet_gw_api_py_rs")
+        .install();
+    if let Ok(handle) = install {
+        let _ = LOG_RESET.set(handle);
+    }
+}
+
+/// Clear the log bridge's cache of Python logger levels.
 ///
-/// Safe to call multiple times; only the first call takes effect.
+/// `pyo3-log` caches each logger's effective level the first time it sees it.
+/// Call this if you reconfigure Python `logging` (e.g. change levels) after the
+/// Rust side has already logged, so the new configuration takes effect.
 #[pyfunction]
-#[pyo3(signature = (level = None))]
-fn enable_logging(level: Option<String>) {
-    INIT_LOGGING.call_once(|| {
-        let filter = match level {
-            Some(l) => tracing_subscriber::EnvFilter::new(l),
-            None => tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        };
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::io::stderr)
-            .try_init();
-    });
+fn reset_logging_cache() {
+    if let Some(handle) = LOG_RESET.get() {
+        handle.reset();
+    }
 }
 
 /// Python bindings for the Jung/Gira Funk Gateway IP (eNet) client.
 #[pymodule]
 fn enet_gw_api_py_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    install_log_bridge(m.py());
     m.add_class::<PyEnetClient>()?;
     m.add_class::<PyDevice>()?;
     m.add_class::<PyDeviceValue>()?;
     m.add_class::<PyDeviceStream>()?;
-    m.add_function(wrap_pyfunction!(enable_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(reset_logging_cache, m)?)?;
     Ok(())
 }

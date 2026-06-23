@@ -17,4 +17,9 @@ enet-client = { path = "vendor/enet-client" }
 enet-proto = { path = "vendor/enet-proto" }
 eventuals = "0.6"
 tokio = { version = "1", features = ["sync"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Bridge the vendored crates' `tracing` logs into Python's `logging`.
+# `log-always` makes `tracing` emit `log` records unconditionally, which
+# `pyo3-log` then forwards to Python.
+tracing = { version = "0.1", features = ["log-always"] }
+log = "0.4"
+pyo3-log = "0.13"

@@ -7,6 +7,7 @@ real Rust client through a full connect / subscribe / command cycle.
 
 import asyncio
 import json
+import logging
 
 import pytest
 
@@ -333,4 +334,99 @@ def test_discover_gateways_against_mock():
                    and g.mac == "aa:bb:cc:dd:ee:ff" for g in gateways)
 
     asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Logging
+# --------------------------------------------------------------------------- #
+
+class _CaptureHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+
+def _capture(level=logging.DEBUG):
+    """Attach a capturing handler to the package's logger for one test."""
+    from enet_gw_api_py_rs import reset_logging_cache
+
+    handler = _CaptureHandler()
+    logger = logging.getLogger("enet_gw_api_py_rs")
+    prev_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(level)
+    # The Rust->Python bridge caches logger levels; refresh after reconfiguring.
+    reset_logging_cache()
+    return handler, logger, prev_level
+
+
+def test_discovery_emits_python_logs():
+    from enet_gw_api_py_rs import discover_gateways
+
+    handler, logger, prev = _capture(logging.DEBUG)
+    try:
+        async def scenario():
+            # No responder: discovery just runs and logs its progress.
+            await discover_gateways(
+                timeout=0.2, broadcast_address="127.0.0.1", listen_port=0, attempts=1
+            )
+        asyncio.run(scenario())
+        names = {r.name for r in handler.records}
+        assert "enet_gw_api_py_rs.discovery" in names
+        assert any("discovery" in r.getMessage().lower() for r in handler.records)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
+
+
+def test_rust_logs_bridge_into_python_logging():
+    handler, logger, prev = _capture(logging.DEBUG)
+    try:
+        async def scenario():
+            # A bare TCP server that drops the connection makes the Rust client
+            # log the failed handshake.
+            async def handle(reader, writer):
+                writer.close()
+            srv = await asyncio.start_server(handle, "127.0.0.1", 0)
+            port = srv.sockets[0].getsockname()[1]
+            try:
+                with pytest.raises(RuntimeError):
+                    await EnetClient.connect("127.0.0.1", port)
+            finally:
+                srv.close()
+        asyncio.run(scenario())
+
+        # Logs originating in the Rust crates are namespaced under the package.
+        rust_records = [r for r in handler.records if "enet-client" in r.name]
+        assert rust_records, "no Rust logs were bridged into Python logging"
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
+
+
+def test_rust_logs_respect_python_level():
+    handler, logger, prev = _capture(logging.WARNING)
+    try:
+        async def scenario():
+            async def handle(reader, writer):
+                writer.close()
+            srv = await asyncio.start_server(handle, "127.0.0.1", 0)
+            port = srv.sockets[0].getsockname()[1]
+            try:
+                with pytest.raises(RuntimeError):
+                    await EnetClient.connect("127.0.0.1", port)
+            finally:
+                srv.close()
+        asyncio.run(scenario())
+
+        levels = {r.levelno for r in handler.records}
+        # At WARNING threshold, the Rust INFO/DEBUG chatter must be filtered out.
+        assert logging.INFO not in levels
+        assert logging.DEBUG not in levels
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
 

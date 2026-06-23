@@ -147,12 +147,33 @@ failed to connect: Failed to connect to gateway.: Failed to send 'get_version'
 command.: Failed to send command.: Connection closed.
 ```
 
-For the full protocol exchange, enable the Rust client's logs before connecting:
+## Logging
+
+The library uses the Python standard `logging` module throughout, and the
+underlying Rust client's `tracing` logs are **bridged into Python `logging`**
+automatically (via [`pyo3-log`](https://crates.io/crates/pyo3-log)). So your
+application's `logging` configuration — levels, handlers, formatters — controls
+*everything*, Python and Rust alike. Nothing is written to stderr on its own.
+
+All logs live under the `enet_gw_api_py_rs` logger:
+
+| Logger | Source |
+| ------ | ------ |
+| `enet_gw_api_py_rs.discovery` | the Python discovery code |
+| `enet_gw_api_py_rs.enet-client.*` | the Rust client (protocol exchange) |
+| `enet_gw_api_py_rs.enet-proto.*` | the Rust protocol layer |
+
+To see the full protocol exchange while debugging a connection, just turn the
+package logger up to `DEBUG`:
 
 ```python
-from enet_gw_api_py_rs import enable_logging
-enable_logging("debug")   # or rely on the RUST_LOG env var
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("enet_gw_api_py_rs").setLevel(logging.DEBUG)
 ```
+
+If you change `logging` levels *after* the Rust side has already logged, call
+`enet_gw_api_py_rs.reset_logging_cache()` so the bridge picks up the new levels.
 
 ## Development
 

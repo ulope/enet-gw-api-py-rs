@@ -12,11 +12,14 @@ ioBroker.enet implementation (https://github.com/stoffel7/ioBroker.enet):
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 __all__ = ["GatewayInfo", "discover_gateways"]
+
+_LOGGER = logging.getLogger(__name__)
 
 # The magic "knock" every eNet gateway listens for.
 DISCOVERY_PAYLOAD = b"Ich wusste, dass Sie zurueck kommen wuerden...\x00\x02"
@@ -69,9 +72,13 @@ class _DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr) -> None:
         info = _parse_reply(data)
-        if info is not None:
-            # De-duplicate by MAC; the same gateway answers every broadcast.
-            self.gateways[info.mac] = info
+        if info is None:
+            _LOGGER.debug("ignoring non-gateway packet from %s (%d bytes)", addr, len(data))
+            return
+        if info.mac not in self.gateways:
+            _LOGGER.info("discovered gateway %s (%s) at %s", info.name, info.mac, info.host)
+        # De-duplicate by MAC; the same gateway answers every broadcast.
+        self.gateways[info.mac] = info
 
 
 async def discover_gateways(
@@ -113,6 +120,10 @@ async def discover_gateways(
     )
     assert isinstance(protocol, _DiscoveryProtocol)
 
+    _LOGGER.debug(
+        "starting gateway discovery: broadcast %s:%d, %d attempt(s) over %.1fs",
+        broadcast_address, broadcast_port, attempts, timeout,
+    )
     try:
         interval = timeout / attempts if attempts > 0 else timeout
         for i in range(max(attempts, 1)):
@@ -120,12 +131,15 @@ async def discover_gateways(
                 transport.sendto(
                     DISCOVERY_PAYLOAD, (broadcast_address, broadcast_port)
                 )
-            except OSError:
+                _LOGGER.debug("sent discovery broadcast %d/%d", i + 1, attempts)
+            except OSError as exc:
                 # Network momentarily unavailable; keep trying / waiting.
-                pass
+                _LOGGER.debug("discovery broadcast failed: %s", exc)
             # Sleep after each send (including the last) so late replies land.
             await asyncio.sleep(interval)
     finally:
         transport.close()
 
-    return list(protocol.gateways.values())
+    gateways = list(protocol.gateways.values())
+    _LOGGER.debug("discovery finished: %d gateway(s) found", len(gateways))
+    return gateways

@@ -11,14 +11,14 @@ __all__ = [
     "DeviceStream",
     "discover_gateways",
     "GatewayInfo",
-    "enable_logging",
+    "reset_logging_cache",
 ]
 
-def enable_logging(level: Optional[str] = None) -> None:
-    """Enable the Rust client's tracing logs to stderr (for debugging).
+def reset_logging_cache() -> None:
+    """Clear the Rust->Python log bridge's cache of logger levels.
 
-    ``level`` is a tracing/env_logger-style filter such as ``"debug"`` or
-    ``"enet-client=debug"``; defaults to ``RUST_LOG`` or ``"info"``.
+    Call this after reconfiguring Python ``logging`` (e.g. changing levels) if
+    the Rust side has already logged, so the new configuration takes effect.
     """
 
 class DeviceValue:
