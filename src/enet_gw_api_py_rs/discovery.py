@@ -14,12 +14,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import sys
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
+
+import netifaces
 
 __all__ = ["GatewayInfo", "discover_gateways"]
 
 _LOGGER = logging.getLogger(__name__)
+
+_LOCAL_ADDR_MISSING = object()
 
 # The magic "knock" every eNet gateway listens for.
 DISCOVERY_PAYLOAD = b"Ich wusste, dass Sie zurueck kommen wuerden...\x00\x02"
@@ -84,6 +89,7 @@ class _DiscoveryProtocol(asyncio.DatagramProtocol):
 async def discover_gateways(
     timeout: float = 5.0,
     *,
+    local_address: str | Literal(_LOCAL_ADDR_MISSING) | None = _LOCAL_ADDR_MISSING,
     broadcast_address: str = "255.255.255.255",
     broadcast_port: int = DISCOVERY_BROADCAST_PORT,
     listen_port: int = DISCOVERY_LISTEN_PORT,
@@ -97,6 +103,11 @@ async def discover_gateways(
 
     Args:
         timeout: Total time to spend discovering, in seconds.
+        local_address: The address to bind to for listening to broadcast returns. 
+            On Linux binding to `0.0.0.0` is allowed, on macOS this results in 
+            `EADDRNOTAVAIL` when trying to send the broadcast packet.
+            If `None` try to use the first IPv4 address of the interface with the 
+            default route (default `0.0.0.0` on Linux, `None` on macOS).
         broadcast_address: Where to broadcast. Use a subnet-directed broadcast
             (e.g. ``"192.168.1.255"``) if global broadcast is filtered.
         broadcast_port: UDP port the gateways listen on (default 3112).
@@ -107,13 +118,34 @@ async def discover_gateways(
     Returns:
         A list of :class:`GatewayInfo`, possibly empty.
     """
+    if local_address is _LOCAL_ADDR_MISSING:
+        if sys.platform == 'darwin':
+            local_address = None
+        else:
+            local_address = "0.0.0.0"
+
+    if not local_address:
+        gws = netifaces.gateways()
+        default_gw = gws.get('default')
+        if not default_gw:
+            raise ValueError("No local_address given and can't detect default gw interface.")
+        gw_addr, iface = default_gw.get(socket.AF_INET, (None, None))
+        if not iface:
+            raise ValueError("No local_address given and interface of default route doesn't have an IPv4 assigned.")
+        addrs = netifaces.ifaddresses(iface)
+        addrs_v4 = addrs.get(socket.AF_INET)
+        if not addrs_v4:
+            raise ValueError("No local_address given and can't get address of interface of default route.")
+        local_address = addrs_v4[0]['addr']
+
+
     loop = asyncio.get_running_loop()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setblocking(False)
-    sock.bind(("", listen_port))
+    sock.bind((local_address, listen_port))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
     transport, protocol = await loop.create_datagram_endpoint(
         _DiscoveryProtocol, sock=sock
@@ -128,7 +160,7 @@ async def discover_gateways(
         interval = timeout / attempts if attempts > 0 else timeout
         for i in range(max(attempts, 1)):
             try:
-                transport.sendto(
+                sock.sendto(
                     DISCOVERY_PAYLOAD, (broadcast_address, broadcast_port)
                 )
                 _LOGGER.debug("sent discovery broadcast %d/%d", i + 1, attempts)
